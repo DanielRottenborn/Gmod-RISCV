@@ -117,12 +117,12 @@ function number number:int32ShiftRightArithmetic(ShiftAmount:number) {  # Maximu
 if (first() | dupefinished()) {
     # 64 bit registers are stored in vector2 form, x component contains upper 32 bits, y component contains lower 32 bits
     
-    IntRegisters = array(1 = vec2(0x0, 0x0), 2 = vec2(0xFFFFFFFF, 0xFFFFFFFF))  # 32 (x0-x31) 64 bit integer registers
+    IntRegisters = array(1 = vec2(0x123, 0xF0000000), 2 = vec2(0x123, 31))  # 32 (x0-x31) 64 bit integer registers
     PC = vec2()  # Program counter register
       
     Memory = table()  # 64 bit memory addressable in "[upper_uint32,lower_uint32]" format
     
-    let Instruction = 0x402081B3  # for testing purposes
+    let Instruction = 0x4020D1BB  # for testing purposes
     Memory["[0,0]", number] = Instruction && 0xFF
     Memory["[0,1]", number] = (Instruction >> 8) && 0xFF    
     Memory["[0,2]", number] = (Instruction >> 16) && 0xFF 
@@ -152,7 +152,7 @@ if (first() | dupefinished()) {
     
     
     let Opcode = InstrByte4 && 0x7F
-    
+ 
     if (Opcode == 0b0010011) {  # OP-IMM instructions
         let Funct = (InstrByte3 >> 4) && 0x7
         
@@ -201,7 +201,7 @@ if (first() | dupefinished()) {
             }
         }
         
-        
+            
     } elseif (Opcode == 0b0011011) {  # OP-IMM-32 instructions
         let Funct = (InstrByte3 >> 4) && 0x7  
               
@@ -240,7 +240,7 @@ if (first() | dupefinished()) {
         let ResultSign = Result >> 31  # <---
         IntRegisters[Rd, vector2] = vec2(0xFFFFFFFF * ResultSign, Result)  # <--- 
 
-          
+   
     } elseif (Opcode == 0b0110111) {  # LUI instruction
         let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register
         
@@ -262,6 +262,7 @@ if (first() | dupefinished()) {
 
         IntRegisters[Rd, vector2] = PC:addInt64(UpperImm) 
         
+        
     } elseif (Opcode == 0b0110011) {  # OP instructions
         let Funct = (InstrByte3 >> 4) && 0x7
         
@@ -274,12 +275,12 @@ if (first() | dupefinished()) {
         let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register
         
         if (Funct == 0b000) {  # ADD & SUB instructions
-            let InstrType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7
+            let OpType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7
             
-            if (InstrType == 0) {  # ADD instruction
+            if (OpType == 0) {  # ADD instruction
                 IntRegisters[Rd, vector2] = Rs1Value:addInt64(Rs2Value)
            
-            } elseif (InstrType == 1) {  # SUB instruction
+            } else {  # SUB instruction
                 IntRegisters[Rd, vector2] = Rs1Value:subInt64(Rs2Value)
             }
             
@@ -303,16 +304,60 @@ if (first() | dupefinished()) {
             IntRegisters[Rd, vector2] = Rs1Value:int64ShiftLeftLogical(Shamt)
 
         } elseif (Funct == 0b101) {  # SRL & SRA instructions
-            let InstrType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7 
+            let ShiftType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7 
             let Shamt = Rs2Value:y() && 0x3F  # Shift amount
           
-            if (InstrType == 0) {  # SRL instruction
+            if (ShiftType == 0) {  # SRL instruction
                 IntRegisters[Rd, vector2] = Rs1Value:int64ShiftRightLogical(Shamt)
                  
             } else {  # SRA instruction
                 IntRegisters[Rd, vector2] = Rs1Value:int64ShiftRightArithmetic(Shamt)                    
             } 
         }
+        
+        
+    } elseif (Opcode == 0b0111011) {  # OP-32 instructions
+        let Funct = (InstrByte3 >> 4) && 0x7
+        
+        let Rs1 = ((InstrByte2 && 0xF) << 1) + (InstrByte3 >> 7)  # First source register
+        let LowerRs1Value = IntRegisters[Rs1, vector2]:y()
+
+        let Rs2 = ((InstrByte1 && 0x1) << 4) + (InstrByte2 >> 4)  # Second source register
+        let LowerRs2Value = IntRegisters[Rs2, vector2]:y()
+        
+        let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register       
+        
+        let Result = _INF
+        
+        if (Funct == 0b000) {  # ADDW & SUBW instructions
+            let OpType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7
+            
+            if (OpType == 0) {  # ADDW instruction
+                Result = (LowerRs1Value + LowerRs2Value) % UINT32OVF
+           
+            } else {  # SUBW instruction
+                Result = (LowerRs1Value - LowerRs2Value) % UINT32OVF
+            } 
+                           
+        } elseif (Funct == 0b001) {  # SLLW instruction
+            let Shamt = LowerRs2Value && 0x1F  # Shift amount
+
+            Result = s2u_32(LowerRs1Value << Shamt)
+            
+        } elseif (Funct == 0b101) {  # SRLW & SRAW instructions
+            let ShiftType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7 
+            let Shamt = LowerRs2Value && 0x1F  # Shift amount
+            
+            if (ShiftType == 0) {  # SRLW instruction
+                Result = s2u_32(LowerRs1Value >> Shamt)
+                
+            } else {  # SRAW instruction
+                Result = LowerRs1Value:int32ShiftRightArithmetic(Shamt)   
+            }                   
+        }
+        
+        let ResultSign = Result >> 31  # <---
+        IntRegisters[Rd, vector2] = vec2(0xFFFFFFFF * ResultSign, Result)  # <---             
     }
 }
 
