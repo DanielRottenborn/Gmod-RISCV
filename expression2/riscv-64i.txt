@@ -15,23 +15,64 @@ function printVec2InHex(Value:vector2) {  # Prints unsigned vector2 components i
     print(format("%X|%X", Value:x(), Value:y()))
 }
 
-function number toUnsigned(Number:number) {  # Signed int32 to unsigned int32 conversion (in lua fp number representation)
-    return Number % UINT32OVF
+function number toUnsigned(Value:number) {  # Signed int32 to unsigned int32 conversion (in lua fp number representation)
+    return Value % UINT32OVF
 }
 
-function vector2 number:signExt32to64() {
+function number number:getFlag(Index:number) {
+    return (This >> Index) && 0x1
+}
+
+function number getFunct3(InstrByte3:number) {
+    return (InstrByte3 >> 4) && 0x7
+}
+
+function number getRd(InstrByte3:number, InstrByte4:number) {  # Returns destination register
+    return ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)     
+}
+
+function number getRs1(InstrByte2:number, InstrByte3:number) {  # Returns first source register
+    return ((InstrByte2 && 0xF) << 1) + (InstrByte3 >> 7)    
+}
+
+function number getRs2(InstrByte1:number, InstrByte2:number) {  # Returns second source register
+    return ((InstrByte1 && 0x1) << 4) + (InstrByte2 >> 4)
+}
+
+function number getIImm(InstrByte1:number, InstrByte2:number) {  # Returns I-type immediate value
+    return (InstrByte1 << 4) + (InstrByte2 >> 4)
+}
+
+function number getUImm(InstrByte1:number, InstrByte2:number, InstrByte3:number) {  # Returns U-type immediate value
+    let Imm = (InstrByte1 << 12) + (InstrByte2 << 4) + (InstrByte3 >> 4)  # 20-bit immediate value
+    return toUnsigned(Imm << 12)  # Upper immediate value
+}
+
+function vector2 number:signExt32to64() {  # Sign-extends 32-bit value to 64 bits
     let Sign = This >> 31
     return vec2(0xFFFFFFFF * Sign, This) 
 }
 
-function vector2 number:signExt12to64() {
+function vector2 number:signExt12to64() {  # Sign-extends 12-bit value to 64 bits
     let Sign = This >> 11
     return vec2(0xFFFFFFFF, 0xFFFFF000) * Sign + vec2(0, This)   
 }
 
-function number number:signExt12to32() {
+function number number:signExt12to32() {  # Sign-extends 12-bit value to 32 bits
     let Sign = This >> 11
     return 0xFFFFF000 * Sign + This  
+}
+
+function vector2 bAnd64(Value1:vector2, Value2:vector2) {
+    return vec2(toUnsigned(bAnd(Value1:x(), Value2:x())), toUnsigned(bAnd(Value1:y(), Value2:y()))) 
+}
+
+function vector2 bOr64(Value1:vector2, Value2:vector2) {
+    return vec2(toUnsigned(bOr(Value1:x(), Value2:x())), toUnsigned(bOr(Value1:y(), Value2:y()))) 
+}
+
+function vector2 bXor64(Value1:vector2, Value2:vector2) {
+    return vec2(toUnsigned(bXor(Value1:x(), Value2:x())), toUnsigned(bXor(Value1:y(), Value2:y()))) 
 }
 
 function vector2 vector2:addInt64(Value:vector2) {
@@ -65,33 +106,33 @@ function vector2 vector2:isLessThan(Value:vector2) {  # Compares two 64-bit inte
     return This:isLessThanU(Value)
 }
 
-function vector2 vector2:int64ShiftLeftLogical(ShiftAmount:number) {  # Maximum shift amount is 63
-    if (ShiftAmount > 31) {
+function vector2 vector2:int64ShiftLeftLogical(ShiftAmount:number) {  # Max shift amount is 63
+    if (ShiftAmount >= 32) {
         return vec2(toUnsigned(This:y() << (ShiftAmount - 32)), 0)
         
-    } elseif (ShiftAmount > 0) {
+    } elseif (ShiftAmount >= 1) {
         return vec2(toUnsigned(This:x() << ShiftAmount) + (This:y() >> (32 - ShiftAmount)), toUnsigned(This:y() << ShiftAmount))
         
     } else { return This }
 }
 
-function vector2 vector2:int64ShiftRightLogical(ShiftAmount:number) {  # Maximum shift amount is 63
-    if (ShiftAmount > 32) {
+function vector2 vector2:int64ShiftRightLogical(ShiftAmount:number) {  # Max shift amount is 63
+    if (ShiftAmount >= 33) {
         return vec2(0, This:x() >> (ShiftAmount - 32))
         
-    } elseif (ShiftAmount > 31) {
+    } elseif (ShiftAmount == 32) {
         return vec2(0, This:x())
         
-    } elseif (ShiftAmount > 0) {
+    } elseif (ShiftAmount >= 1) {
         return vec2(This:x() >> ShiftAmount, (This:y() >> ShiftAmount) + toUnsigned(This:x() << (32 - ShiftAmount)))
         
     } else { return This }
 }
 
-function vector2 vector2:int64ShiftRightArithmetic(ShiftAmount:number) {  # Maximum shift amount is 63
-    let ValueSign = This:x() >> 31
+function vector2 vector2:int64ShiftRightArithmetic(ShiftAmount:number) {  # Max shift amount is 63
+    let Sign = This:x() >> 31  # Sign of the value to be shifted
     
-    if (ValueSign) {
+    if (Sign) {
         This = vec2(bNot(This:x()), bNot(This:y()))  # Flip bits if the value is negative
         This = This:int64ShiftRightLogical(ShiftAmount)
         
@@ -101,26 +142,26 @@ function vector2 vector2:int64ShiftRightArithmetic(ShiftAmount:number) {  # Maxi
 }
 
 function vector2 vector2:int64ShiftRightArithmetic_DEPRECATED(ShiftAmount:number) {  # Shifting & calculating extension bits manualy
-    let ValueSign = This:x() >> 31
+    let Sign = This:x() >> 31  # Sign of the value to be shifted
     
-    if (ShiftAmount > 32) {
-        let SignExtension = toUnsigned((2 ^ (ShiftAmount - 32) - 1) << (64 - ShiftAmount)) * ValueSign
-        return vec2(0xFFFFFFFF * ValueSign, (This:x() >> (ShiftAmount - 32)) + SignExtension)
+    if (ShiftAmount >= 33) {
+        let SignExtension = toUnsigned((2 ^ (ShiftAmount - 32) - 1) << (64 - ShiftAmount)) * Sign
+        return vec2(0xFFFFFFFF * Sign, (This:x() >> (ShiftAmount - 32)) + SignExtension)
         
-    } elseif (ShiftAmount > 31) {
-        return vec2(0xFFFFFFFF * ValueSign, This:x())
+    } elseif (ShiftAmount == 32) {
+        return vec2(0xFFFFFFFF * Sign, This:x())
         
-    } elseif (ShiftAmount > 0) {
-        let SignExtension = toUnsigned((2 ^ ShiftAmount - 1) << (32 - ShiftAmount)) * ValueSign
+    } elseif (ShiftAmount >= 1) {
+        let SignExtension = toUnsigned((2 ^ ShiftAmount - 1) << (32 - ShiftAmount)) * Sign
         return vec2((This:x() >> ShiftAmount) + SignExtension, (This:y() >> ShiftAmount) + toUnsigned(This:x() << (32 - ShiftAmount)))
         
     } else { return This }
 }
 
-function number number:int32ShiftRightArithmetic(ShiftAmount:number) {  # Maximum shift amount is 31
-    let ValueSign = This >> 31
+function number number:int32ShiftRightArithmetic(ShiftAmount:number) {  # Max shift amount is 31
+    let Sign = This >> 31  # Sign of the value to be shifted
     
-    if (ValueSign) {
+    if (Sign) {
         This = bNot(This)  # Flip bits if the value is negative
         This = This >> ShiftAmount
         
@@ -132,7 +173,11 @@ function number number:int32ShiftRightArithmetic(ShiftAmount:number) {  # Maximu
 if (first() | dupefinished()) {
     # 64-bit registers are stored in vector2 form, x component contains upper 32 bits, y component contains lower 32 bits
     
-    IntRegisters = array(1 = vec2(0x123, 0xF0000000), 2 = vec2(0x123, 31))  # 32 (x0-x31) 64-bit integer registers
+    IntRegisters = array(  # 32 (x0-x31) 64-bit integer registers
+        1 = vec2(0x0, 0x0),
+        2 = vec2(0x0, 00)
+    )
+    
     PC = vec2()  # Program counter register
       
     Memory = table()  # 64-bit memory addressable in "[upper_uint32,lower_uint32]" format
@@ -167,16 +212,16 @@ if (first() | dupefinished()) {
     
     
     let Opcode = InstrByte4 && 0x7F
- 
-    if (Opcode == 0b0010011) {  # OP-IMM instructions
-        let Funct = (InstrByte3 >> 4) && 0x7
+    
+    if (Opcode == 0b0010011) {  # OP-IMM instructions  
+        let Funct = getFunct3(InstrByte3)
         
-        let Rs = ((InstrByte2 && 0xF) << 1) + (InstrByte3 >> 7)  # Source register
+        let Rs = getRs1(InstrByte2, InstrByte3)  # Source register
         let RsValue = IntRegisters[Rs, vector2]
         
-        let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register
+        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
         
-        let Imm = (InstrByte1 << 4) + (InstrByte2 >> 4)  # 12-bit immediate value
+        let Imm = getIImm(InstrByte1, InstrByte2)  # 12-bit immediate value
         let SExtImm = Imm:signExt12to64()  # Sign-extended immediate value
          
         if (Funct == 0b000) {  # ADDI instruction
@@ -189,20 +234,20 @@ if (first() | dupefinished()) {
             IntRegisters[Rd, vector2] = RsValue:isLessThanU(SExtImm)
             
         } elseif (Funct == 0b111) {  # ANDI instruction
-            IntRegisters[Rd, vector2] = vec2(toUnsigned(bAnd(RsValue:x(), SExtImm:x())), toUnsigned(bAnd(RsValue:y(), SExtImm:y())))
+            IntRegisters[Rd, vector2] = bAnd64(RsValue, SExtImm)
             
         } elseif (Funct == 0b110) {  # ORI instruction
-            IntRegisters[Rd, vector2] = vec2(toUnsigned(bOr(RsValue:x(), SExtImm:x())), toUnsigned(bOr(RsValue:y(), SExtImm:y())))
+            IntRegisters[Rd, vector2] = bOr64(RsValue, SExtImm)
             
         } elseif (Funct == 0b100) {  # XORI instruction
-            IntRegisters[Rd, vector2] = vec2(toUnsigned(bXor(RsValue:x(), SExtImm:x())), toUnsigned(bXor(RsValue:y(), SExtImm:y())))
+            IntRegisters[Rd, vector2] = bXor64(RsValue, SExtImm)
             
         } elseif (Funct == 0b001) {  # SLLI instruction
             let Shamt = SExtImm:y() && 0x3F  # Shift amount
             IntRegisters[Rd, vector2] = RsValue:int64ShiftLeftLogical(Shamt)
             
         } elseif (Funct == 0b101) {  # SRLI & SRAI instructions
-            let ShiftType = (SExtImm:y() >> 10) && 0x1
+            let ShiftType = InstrByte1:getFlag(6)
             let Shamt = SExtImm:y() && 0x3F  # Shift amount
 
             if (ShiftType == 0) {  # SRLI instruction
@@ -215,14 +260,14 @@ if (first() | dupefinished()) {
         
             
     } elseif (Opcode == 0b0011011) {  # OP-IMM-32 instructions
-        let Funct = (InstrByte3 >> 4) && 0x7  
+        let Funct = getFunct3(InstrByte3)
               
-        let Rs = ((InstrByte2 && 0xF) << 1) + (InstrByte3 >> 7)  # Source register
+        let Rs = getRs1(InstrByte2, InstrByte3)  # Source register
         let LowerRsValue = IntRegisters[Rs, vector2]:y()
         
-        let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register
+        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
         
-        let Imm = (InstrByte1 << 4) + (InstrByte2 >> 4)  # Immediate value        
+        let Imm = getIImm(InstrByte1, InstrByte2)  # Immediate value        
         
         let Result = _INF
         
@@ -237,7 +282,7 @@ if (first() | dupefinished()) {
             Result = toUnsigned(LowerRsValue << Shamt)
             
         } elseif (Funct == 0b101) {  # SRLIW & SRAIW instructions
-            let ShiftType = (Imm >> 10) && 0x1 
+            let ShiftType = InstrByte1:getFlag(6) 
             let Shamt = Imm && 0x1F  # Shift amount
             
             if (ShiftType == 0) {  # SRLIW instruction
@@ -252,36 +297,32 @@ if (first() | dupefinished()) {
 
    
     } elseif (Opcode == 0b0110111) {  # LUI instruction
-        let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register
-        
-        let Imm = (InstrByte1 << 12) + (InstrByte2 << 4) + (InstrByte3 >> 4)  # 20-bit immediate value
-        Imm = toUnsigned(Imm << 12)  # Upper immediate value
+        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register        
+        let Imm = getUImm(InstrByte1, InstrByte2, InstrByte3)  # Upper immediate value
   
         IntRegisters[Rd, vector2] = Imm:signExt32to64()
         
         
     } elseif (Opcode == 0b0010111) {  # AUIPC instruction
-        let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register
-        
-        let Imm = (InstrByte1 << 12) + (InstrByte2 << 4) + (InstrByte3 >> 4)  # 20-bit immediate value
-        Imm = toUnsigned(Imm << 12)  # Upper immediate value
+        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
+        let Imm = getUImm(InstrByte1, InstrByte2, InstrByte3)  # Upper immediate value
 
         IntRegisters[Rd, vector2] = PC:addInt64(Imm:signExt32to64()) 
         
         
     } elseif (Opcode == 0b0110011) {  # OP instructions
-        let Funct = (InstrByte3 >> 4) && 0x7
+        let Funct = getFunct3(InstrByte3)
         
-        let Rs1 = ((InstrByte2 && 0xF) << 1) + (InstrByte3 >> 7)  # First source register
+        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
         let Rs1Value = IntRegisters[Rs1, vector2]
 
-        let Rs2 = ((InstrByte1 && 0x1) << 4) + (InstrByte2 >> 4)  # Second source register
+        let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
         let Rs2Value = IntRegisters[Rs2, vector2]
         
-        let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register
+        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
         
         if (Funct == 0b000) {  # ADD & SUB instructions
-            let OpType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7
+            let OpType = InstrByte1:getFlag(6)
             
             if (OpType == 0) {  # ADD instruction
                 IntRegisters[Rd, vector2] = Rs1Value:addInt64(Rs2Value)
@@ -297,20 +338,20 @@ if (first() | dupefinished()) {
             IntRegisters[Rd, vector2] = Rs1Value:isLessThanU(Rs2Value)
               
         } elseif (Funct == 0b111) {  # AND instruction
-            IntRegisters[Rd, vector2] = vec2(toUnsigned(bAnd(Rs1Value:x(), Rs2Value:x())), toUnsigned(bAnd(Rs1Value:y(), Rs2Value:y())))
-           
+            IntRegisters[Rd, vector2] = bAnd64(Rs1Value, Rs2Value)
+            
         } elseif (Funct == 0b110) {  # OR instruction
-            IntRegisters[Rd, vector2] = vec2(toUnsigned(bOr(Rs1Value:x(), Rs2Value:x())), toUnsigned(bOr(Rs1Value:y(), Rs2Value:y())))
+            IntRegisters[Rd, vector2] = bOr64(Rs1Value, Rs2Value)
            
         } elseif (Funct == 0b100) {  # XOR instruction
-            IntRegisters[Rd, vector2] = vec2(toUnsigned(bXor(Rs1Value:x(), Rs2Value:x())), toUnsigned(bXor(Rs1Value:y(), Rs2Value:y())))
+            IntRegisters[Rd, vector2] = bXor64(Rs1Value, Rs2Value)
            
         } elseif (Funct == 0b001) {  # SLL instruction
             let Shamt = Rs2Value:y() && 0x3F  # Shift amount
             IntRegisters[Rd, vector2] = Rs1Value:int64ShiftLeftLogical(Shamt)
 
         } elseif (Funct == 0b101) {  # SRL & SRA instructions
-            let ShiftType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7 
+            let ShiftType = InstrByte1:getFlag(6)
             let Shamt = Rs2Value:y() && 0x3F  # Shift amount
           
             if (ShiftType == 0) {  # SRL instruction
@@ -323,20 +364,20 @@ if (first() | dupefinished()) {
         
         
     } elseif (Opcode == 0b0111011) {  # OP-32 instructions
-        let Funct = (InstrByte3 >> 4) && 0x7
+        let Funct = getFunct3(InstrByte3)
         
-        let Rs1 = ((InstrByte2 && 0xF) << 1) + (InstrByte3 >> 7)  # First source register
+        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
         let LowerRs1Value = IntRegisters[Rs1, vector2]:y()
 
-        let Rs2 = ((InstrByte1 && 0x1) << 4) + (InstrByte2 >> 4)  # Second source register
+        let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
         let LowerRs2Value = IntRegisters[Rs2, vector2]:y()
         
-        let Rd = ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)  # Destination register       
+        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register       
         
         let Result = _INF
         
         if (Funct == 0b000) {  # ADDW & SUBW instructions
-            let OpType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7
+            let OpType = InstrByte1:getFlag(6)
             
             if (OpType == 0) {  # ADDW instruction
                 Result = (LowerRs1Value + LowerRs2Value) % UINT32OVF
@@ -351,7 +392,7 @@ if (first() | dupefinished()) {
             Result = toUnsigned(LowerRs1Value << Shamt)
             
         } elseif (Funct == 0b101) {  # SRLW & SRAW instructions
-            let ShiftType = (InstrByte1 >> 6) && 0x1  # 6th byte flag from funct7 
+            let ShiftType = InstrByte1:getFlag(6) 
             let Shamt = LowerRs2Value && 0x1F  # Shift amount
             
             if (ShiftType == 0) {  # SRLW instruction
@@ -365,42 +406,3 @@ if (first() | dupefinished()) {
         IntRegisters[Rd, vector2] = Result:signExt32to64()           
     }
 }
-
-#[
-
-GENERAL INFORMATION:
-
-    XLEN - The width of an int register
-    
-    Addressible memory - 2^XLEN bytes
-    Memory is circular
-    Word - 4bytes
-    
-    IALIGN - Allignment boundary for instructions, either 32 bits or 16 bits (for C extension)
-    ILEN - Maximum supported instruction length (32 bits in standard set)
-    32-bit instructions have two lowest bits set to 11, compressed instructions do not
-    Instructions with bits [15:0] all zeros are illegal, the length is considered 16 bits if C extension is present, otherwise, 32 bits
-    Instructions with bits [ILEN - 1:0] all ones are illegal, the length is considered ILEN bits long
-    Instrucions are always stored in a little-endian format
-    
-    
-    IMPORTANT, IMPLEMENT LATER -> There are 32 integer registers, the register x0 is hardwired to zero
-    PC Register holds the address of the current instruction
-    
-    Immediate values are always sign extended, except for some CSR instructions
-    
-RV64I DIFFERENCES:
-    
-    XLEN = 64
-    W-suffixed instructions operate on lower 32 bits and produce 32-bit signed values sign-extended to 64-bit registers
-    SLLIW, SRLIW, and SRAIW encodings with imm[5] = 0 are reserved.
-    
-]#
-
-#[
-
-TODO:
-
-    Move variables to inner scopes?
-    
-]#
