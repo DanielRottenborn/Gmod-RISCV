@@ -19,6 +19,7 @@ function number toUnsigned(Value:number) {  # Signed int32 to unsigned int32 con
     return Value % UINT32OVF
 }
 
+
 function vector2 number:signExt32to64() {  # Sign-extends 32-bit value to 64 bits
     let Sign = This >> 31
     return vec2(0xFFFFFFFF * Sign, This) 
@@ -27,6 +28,11 @@ function vector2 number:signExt32to64() {  # Sign-extends 32-bit value to 64 bit
 function vector2 number:signExt21to64() {  # Sign-extends 21-bit value to 64 bits
     let Sign = This >> 20
     return vec2(0xFFFFFFFF, 0xFFE00000) * Sign + vec2(0, This)   
+}
+
+function vector2 number:signExt13to64() {  # Sign-extends 13-bit value to 64 bits
+    let Sign = This >> 12
+    return vec2(0xFFFFFFFF, 0xFFFFE000) * Sign + vec2(0, This)   
 }
 
 function vector2 number:signExt12to64() {  # Sign-extends 12-bit value to 64 bits
@@ -38,6 +44,7 @@ function number number:signExt12to32() {  # Sign-extends 12-bit value to 32 bits
     let Sign = This >> 11
     return 0xFFFFF000 * Sign + This  
 }
+
 
 function number number:getFlag(Index:number) {
     return (This >> Index) && 0x1
@@ -59,8 +66,16 @@ function number getRd(InstrByte3:number, InstrByte4:number) {  # Returns destina
     return ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)     
 }
 
+
 function number getIImm(InstrByte1:number, InstrByte2:number) {  # Returns I-type immediate value
     return (InstrByte1 << 4) + (InstrByte2 >> 4)
+}
+
+function vector2 getBImmSExt64(InstrByte1:number, InstrByte3:number, InstrByte4:number) {  # Returns B-type sign-extended immediate value
+    let BImm = ((InstrByte1 && 0x80) << 5) + ((InstrByte4 && 0x80) << 4) +
+               ((InstrByte1 && 0x7E) << 4) + ((InstrByte3 &&  0xF) << 1)  # 12-bit immediate encoding values that are multiples of two
+
+    return BImm:signExt13to64()
 }
 
 function vector2 getUImmSExt64(InstrByte1:number, InstrByte2:number, InstrByte3:number) {  # Returns U-type sign-extended immediate value
@@ -70,10 +85,11 @@ function vector2 getUImmSExt64(InstrByte1:number, InstrByte2:number, InstrByte3:
 
 function vector2 getJImmSExt64(InstrByte1:number, InstrByte2:number, InstrByte3:number) {  # Returns J-type sign-extended immediate value
     let JImm = ((InstrByte1 && 0x80) << 13) + ((InstrByte2 && 0x0F) << 16) + ((InstrByte3 && 0xF0) << 8) +
-               ((InstrByte2 && 0x10) <<  7) + ((InstrByte1 && 0x7F) <<  4) + ((InstrByte2 && 0xE0) >> 4)  # 21-bit immediate value
+               ((InstrByte2 && 0x10) <<  7) + ((InstrByte1 && 0x7F) <<  4) + ((InstrByte2 && 0xE0) >> 4)  # 20-bit immediate encoding values that are multiples of two
             
     return JImm:signExt21to64()
 }
+
 
 function vector2 bAnd64(Value1:vector2, Value2:vector2) {
     return vec2(toUnsigned(bAnd(Value1:x(), Value2:x())), toUnsigned(bAnd(Value1:y(), Value2:y()))) 
@@ -86,6 +102,7 @@ function vector2 bOr64(Value1:vector2, Value2:vector2) {
 function vector2 bXor64(Value1:vector2, Value2:vector2) {
     return vec2(toUnsigned(bXor(Value1:x(), Value2:x())), toUnsigned(bXor(Value1:y(), Value2:y()))) 
 }
+
 
 function vector2 vector2:addInt64(Value:vector2) {
     let LowerSum = This:y() + Value:y()
@@ -102,21 +119,34 @@ function vector2 vector2:subInt64(Value:vector2) {
     return vec2((This:x() - Value:x() - (LowerDiff < 0)) % UINT32OVF, LowerDiff % UINT32OVF) 
 }
 
-function vector2 vector2:isLessThanU(Value:vector2) {  # Compares two 64-bit integers in unsigned interpretation
+
+function number vector2:isLessThanU(Value:vector2) {  # Compares two 64-bit integers in unsigned interpretation
     if (This:x() == Value:x()) {
-        return vec2(0, This:y() < Value:y())
+        return This:y() < Value:y()
         
     } else {
-        return vec2(0, This:x() < Value:x())
+        return This:x() < Value:x()
     }
 }
 
-function vector2 vector2:isLessThan(Value:vector2) {  # Compares two 64-bit integers in signed interpretation
+function number vector2:isLessThan(Value:vector2) {  # Compares two 64-bit integers in signed interpretation
     This = This:setX(toUnsigned(bXor(This:x(), 0x80000000)))  # Swapping the sign bits for signed comparison
     Value = Value:setX(toUnsigned(bXor(Value:x(), 0x80000000)))
 
     return This:isLessThanU(Value)
 }
+
+function number vector2:isGreaterOrEqualU(Value:vector2) {  # Compares two 64-bit integers in unsigned interpretation
+    return (This:x() > Value:x()) | ((This:x() == Value:x()) & (This:y() >= Value:y()))
+}
+
+function number vector2:isGreaterOrEqual(Value:vector2) {  # Compares two 64-bit integers in signed interpretation
+    This = This:setX(toUnsigned(bXor(This:x(), 0x80000000)))  # Swapping the sign bits for signed comparison
+    Value = Value:setX(toUnsigned(bXor(Value:x(), 0x80000000)))
+
+    return This:isGreaterOrEqualU(Value)
+}
+
 
 function vector2 vector2:int64ShiftLeftLogical(ShiftAmount:number) {  # Max shift amount is 63
     if (ShiftAmount >= 32) {
@@ -182,6 +212,7 @@ function number number:int32ShiftRightArithmetic(ShiftAmount:number) {  # Max sh
     } else { return toUnsigned(This >> ShiftAmount) }
 }
 
+
 if (first() | dupefinished()) {
     # 64-bit registers are stored in vector2 form, x component contains upper 32 bits, y component contains lower 32 bits
     
@@ -194,7 +225,7 @@ if (first() | dupefinished()) {
       
     Memory = table()  # 64-bit memory addressable in "[upper_uint32,lower_uint32]" format
     
-    let Instruction = 0xF38282E7  # For testing purposes
+    let Instruction = 0x6420F7E3  # For testing purposes
     Memory["[0,0]", number] = Instruction && 0xFF
     Memory["[0,1]", number] = (Instruction >> 8) && 0xFF    
     Memory["[0,2]", number] = (Instruction >> 16) && 0xFF 
@@ -240,10 +271,10 @@ if (first() | dupefinished()) {
             IntRegisters[Rd, vector2] = RsValue:addInt64(SExtImm)
             
         } elseif (Funct == 0b010) {  # SLTI instruction
-            IntRegisters[Rd, vector2] = RsValue:isLessThan(SExtImm)
+            IntRegisters[Rd, vector2] = vec2(0, RsValue:isLessThan(SExtImm))
             
         } elseif (Funct == 0b011) {  # SLTIU instruction
-            IntRegisters[Rd, vector2] = RsValue:isLessThanU(SExtImm)
+            IntRegisters[Rd, vector2] = vec2(0, RsValue:isLessThanU(SExtImm))
             
         } elseif (Funct == 0b111) {  # ANDI instruction
             IntRegisters[Rd, vector2] = bAnd64(RsValue, SExtImm)
@@ -352,10 +383,10 @@ if (first() | dupefinished()) {
             }
             
         } elseif (Funct == 0b010) {  # SLT instruction
-            IntRegisters[Rd, vector2] = Rs1Value:isLessThan(Rs2Value)
+            IntRegisters[Rd, vector2] = vec2(0, Rs1Value:isLessThan(Rs2Value))
               
         } elseif (Funct == 0b011) {  # SLTU instruction
-            IntRegisters[Rd, vector2] = Rs1Value:isLessThanU(Rs2Value)
+            IntRegisters[Rd, vector2] = vec2(0, Rs1Value:isLessThanU(Rs2Value))
               
         } elseif (Funct == 0b111) {  # AND instruction
             IntRegisters[Rd, vector2] = bAnd64(Rs1Value, Rs2Value)
@@ -435,7 +466,7 @@ if (first() | dupefinished()) {
         let Offset = getJImmSExt64(InstrByte1, InstrByte2, InstrByte3)  # Sign-extended jump offset
         
         IntRegisters[Rd, vector2] = PC:addInt32(4)  # Stores the address of the next instruction into Rd
-        PC = PC:addInt64(Offset)
+        PC = PC:addInt64(Offset)  # Jumps to the offset relative to PC
  
        
     } elseif (Opcode == 0b1100111) {  # JALR instruction
@@ -450,6 +481,59 @@ if (first() | dupefinished()) {
         TargetAddress = TargetAddress:setY(TargetAddress:y() && 0xFFFFFFFE)  # Setting the least-significant bit to zero
         
         IntRegisters[Rd, vector2] = PC:addInt32(4)  # Stores the address of the next instruction into Rd
-        PC = TargetAddress
+        PC = TargetAddress  # Jumps to the target address
+        
+        
+    } elseif (Opcode == 0b1100011) {  # BRANCH instructions
+        let Funct = getFunct3(InstrByte3)
+        
+        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
+        let Rs1Value = IntRegisters[Rs1, vector2]
+
+        let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
+        let Rs2Value = IntRegisters[Rs2, vector2]        
+        
+        if (Funct == 0b000) {  # BEQ instruction
+            if (Rs1Value == Rs2Value) {
+                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)  # Sign-extended jump offset
+                PC = PC:addInt64(Offset)  # Branches to the offset relative to PC
+                
+            } else { PC = PC:addInt32(4) }  # Increments program counter otherwise
+            
+        } elseif (Funct == 0b001) {  # BNE instruction
+            if (Rs1Value != Rs2Value) {
+                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                PC = PC:addInt64(Offset)
+                
+            } else { PC = PC:addInt32(4) }  
+            
+        } elseif (Funct == 0b100) {  # BLT instruction
+            if (Rs1Value:isLessThan(Rs2Value)) {
+                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                PC = PC:addInt64(Offset)
+                
+            } else { PC = PC:addInt32(4) }  
+
+        } elseif (Funct == 0b110) {  # BLTU instruction
+            if (Rs1Value:isLessThanU(Rs2Value)) {
+                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                PC = PC:addInt64(Offset)
+                
+            } else { PC = PC:addInt32(4) } 
+             
+        } elseif (Funct == 0b101) {  # BGE instruction
+            if (Rs1Value:isGreaterOrEqual(Rs2Value)) {
+                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                PC = PC:addInt64(Offset)
+                
+            } else { PC = PC:addInt32(4) }  
+
+        } elseif (Funct == 0b111) {  # BGEU instruction
+            if (Rs1Value:isGreaterOrEqualU(Rs2Value)) {
+                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                PC = PC:addInt64(Offset)
+                
+            } else { PC = PC:addInt32(4) }  
+        }
     }
 }
