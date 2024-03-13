@@ -51,11 +51,11 @@ function number number:getFlag(Index:number) {
 }
 
 function number getFunct3(InstrByte3:number) {
-    return (InstrByte3 >> 4) && 0x7
+    return (InstrByte3 && 0x70) >> 4
 }
 
 function number getRs1(InstrByte2:number, InstrByte3:number) {  # Returns first source register
-    return ((InstrByte2 && 0xF) << 1) + (InstrByte3 >> 7)    
+    return ((InstrByte2 && 0xF) << 1) + (InstrByte3 >> 7)
 }
 
 function number getRs2(InstrByte1:number, InstrByte2:number) {  # Returns second source register
@@ -63,7 +63,7 @@ function number getRs2(InstrByte1:number, InstrByte2:number) {  # Returns second
 }
 
 function number getRd(InstrByte3:number, InstrByte4:number) {  # Returns destination register
-    return ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)     
+    return ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)
 }
 
 
@@ -224,13 +224,19 @@ if (first() | dupefinished()) {
     PC = vec2()  # Program counter register
       
     Memory = table()  # 64-bit memory addressable in "[upper_uint32,lower_uint32]" format
+ 
+
+    let Instructions = array(0x00108093)
     
-    let Instruction = 0x6420F7E3  # For testing purposes
-    Memory["[0,0]", number] = Instruction && 0xFF
-    Memory["[0,1]", number] = (Instruction >> 8) && 0xFF    
-    Memory["[0,2]", number] = (Instruction >> 16) && 0xFF 
-    Memory["[0,3]", number] = (Instruction >> 24) 
-    
+    # For testing purposes:
+    foreach(I:number, Instruction:number = Instructions) {
+        Memory[toString(vec2(0, ((I - 1) * 4)    )), number] =  Instruction && 0xFF
+        Memory[toString(vec2(0, ((I - 1) * 4) + 1)), number] = (Instruction >> 8) && 0xFF
+        Memory[toString(vec2(0, ((I - 1) * 4) + 2)), number] = (Instruction >> 16) && 0xFF
+        Memory[toString(vec2(0, ((I - 1) * 4) + 3)), number] = (Instruction >> 24)
+    }
+
+
     Initialized = 1
     
     
@@ -311,19 +317,16 @@ if (first() | dupefinished()) {
         let LowerRsValue = IntRegisters[Rs, vector2]:y()
         
         let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
-        
-        let Imm = getIImm(InstrByte1, InstrByte2)  # Immediate value        
-        
         let Result = _INF
         
+        let Imm = getIImm(InstrByte1, InstrByte2)  # Immediate value        
+       
         if (Funct == 0b000) {  # ADDIW instruction
-            let SExtImm = Imm:signExt12to32()  # Sign-extended lower immediate value
-            
+            let SExtImm = Imm:signExt12to32()  # Sign-extended lower immediate value        
             Result = (LowerRsValue + SExtImm) % UINT32OVF
                      
         } elseif (Funct == 0b001) {  # SLLIW instruction
             let Shamt = Imm && 0x1F  # Shift amount
-            
             Result = toUnsigned(LowerRsValue << Shamt)
             
         } elseif (Funct == 0b101) {  # SRLIW & SRAIW instructions
@@ -425,8 +428,7 @@ if (first() | dupefinished()) {
         let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
         let LowerRs2Value = IntRegisters[Rs2, vector2]:y()
         
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register       
-        
+        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
         let Result = _INF
         
         if (Funct == 0b000) {  # ADDW & SUBW instructions
@@ -441,7 +443,6 @@ if (first() | dupefinished()) {
                            
         } elseif (Funct == 0b001) {  # SLLW instruction
             let Shamt = LowerRs2Value && 0x1F  # Shift amount
-
             Result = toUnsigned(LowerRs1Value << Shamt)
             
         } elseif (Funct == 0b101) {  # SRLW & SRAW instructions
