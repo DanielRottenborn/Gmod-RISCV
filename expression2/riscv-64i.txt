@@ -15,6 +15,10 @@ function printVec2InHex(Value:vector2) {  # Prints unsigned vector2 components i
     print(format("%X|%X", Value:x(), Value:y()))
 }
 
+function int64toLuaFloat(Value:vector2) {  # Converts int64 stored as vector2 to lua fp
+    return Value:x() * 2 ^ 32 + Value:y()
+}
+
 function number toUnsigned(Value:number) {  # Signed int32 to unsigned int32 conversion (in lua fp number representation)
     return Value % UINT32OVF
 }
@@ -265,428 +269,433 @@ if (first() | dupefinished()) {
 
 
 } elseif (Initialized) {
-    let InstrByte1 = _INF
-    let InstrByte2 = _INF
-    let InstrByte3 = _INF
-    let InstrByte4 = _INF
-
-    if (PC:y() + 3 >= UINT32OVF) {  # If PC is close to overflowing, do propper addition
-        InstrByte1 = Memory[PC:addInt32(3):toString(), number]
-        InstrByte2 = Memory[PC:addInt32(2):toString(), number]
-        InstrByte3 = Memory[PC:addInt32(1):toString(), number]
-        InstrByte4 = Memory[PC:toString(), number]
-        
-    } else {  # Do simplified addition otherwise
-        InstrByte1 = Memory[PC:setY(PC:y() + 3):toString(), number]
-        InstrByte2 = Memory[PC:setY(PC:y() + 2):toString(), number]
-        InstrByte3 = Memory[PC:setY(PC:y() + 1):toString(), number]
-        InstrByte4 = Memory[PC:toString(), number]
-    }
+    while (perf(90)) {
     
+        let InstrByte1 = _INF
+        let InstrByte2 = _INF
+        let InstrByte3 = _INF
+        let InstrByte4 = _INF
     
-    let Opcode = InstrByte4 && 0x7F
-    
-    if (Opcode == 0b0010011) {  # OP-IMM instructions  
-        let Funct = getFunct3(InstrByte3)
-        
-        let Rs = getRs1(InstrByte2, InstrByte3)  # Source register
-        let RsValue = IntRegisters[Rs, vector2]
-        
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
-        
-        let Imm = getIImm(InstrByte1, InstrByte2)  # 12-bit immediate value
-        let SExtImm = Imm:signExt12to64()  # Sign-extended immediate value
-         
-        if (Funct == 0b000) {  # ADDI instruction
-            IntRegisters[Rd, vector2] = RsValue:addInt64(SExtImm)
+        if (PC:y() + 3 >= UINT32OVF) {  # If PC is close to overflowing, do propper addition
+            InstrByte1 = Memory[PC:addInt32(3):toString(), number]
+            InstrByte2 = Memory[PC:addInt32(2):toString(), number]
+            InstrByte3 = Memory[PC:addInt32(1):toString(), number]
+            InstrByte4 = Memory[PC:toString(), number]
             
-        } elseif (Funct == 0b010) {  # SLTI instruction
-            IntRegisters[Rd, vector2] = vec2(0, RsValue:isLessThan(SExtImm))
-            
-        } elseif (Funct == 0b011) {  # SLTIU instruction
-            IntRegisters[Rd, vector2] = vec2(0, RsValue:isLessThanU(SExtImm))
-            
-        } elseif (Funct == 0b111) {  # ANDI instruction
-            IntRegisters[Rd, vector2] = bAnd64(RsValue, SExtImm)
-            
-        } elseif (Funct == 0b110) {  # ORI instruction
-            IntRegisters[Rd, vector2] = bOr64(RsValue, SExtImm)
-            
-        } elseif (Funct == 0b100) {  # XORI instruction
-            IntRegisters[Rd, vector2] = bXor64(RsValue, SExtImm)
-            
-        } elseif (Funct == 0b001) {  # SLLI instruction
-            let Shamt = SExtImm:y() && 0x3F  # Shift amount
-            IntRegisters[Rd, vector2] = RsValue:int64ShiftLeftLogical(Shamt)
-            
-        } elseif (Funct == 0b101) {  # SRLI & SRAI instructions
-            let ShiftType = InstrByte1:getFlag(6)
-            let Shamt = SExtImm:y() && 0x3F  # Shift amount
-
-            if (ShiftType == 0) {  # SRLI instruction
-                IntRegisters[Rd, vector2] = RsValue:int64ShiftRightLogical(Shamt)
-                
-            } else {  # SRAI instruction
-                IntRegisters[Rd, vector2] = RsValue:int64ShiftRightArithmetic(Shamt)
-            }
+        } else {  # Do simplified addition otherwise
+            InstrByte1 = Memory[PC:setY(PC:y() + 3):toString(), number]
+            InstrByte2 = Memory[PC:setY(PC:y() + 2):toString(), number]
+            InstrByte3 = Memory[PC:setY(PC:y() + 1):toString(), number]
+            InstrByte4 = Memory[PC:toString(), number]
         }
         
-        PC = PC:addInt32(4)  # Increments program counter
         
+        let Opcode = InstrByte4 && 0x7F
+        
+        if (Opcode == 0b0010011) {  # OP-IMM instructions  
+            let Funct = getFunct3(InstrByte3)
             
-    } elseif (Opcode == 0b0011011) {  # OP-IMM-32 instructions
-        let Funct = getFunct3(InstrByte3)
-              
-        let Rs = getRs1(InstrByte2, InstrByte3)  # Source register
-        let LowerRsValue = IntRegisters[Rs, vector2]:y()
-        
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
-        let Result = _INF
-        
-        let Imm = getIImm(InstrByte1, InstrByte2)  # Immediate value        
-       
-        if (Funct == 0b000) {  # ADDIW instruction
-            let SExtImm = Imm:signExt12to32()  # Sign-extended lower immediate value        
-            Result = (LowerRsValue + SExtImm) % UINT32OVF
-                     
-        } elseif (Funct == 0b001) {  # SLLIW instruction
-            let Shamt = Imm && 0x1F  # Shift amount
-            Result = toUnsigned(LowerRsValue << Shamt)
+            let Rs = getRs1(InstrByte2, InstrByte3)  # Source register
+            let RsValue = IntRegisters[Rs, vector2]
             
-        } elseif (Funct == 0b101) {  # SRLIW & SRAIW instructions
-            let ShiftType = InstrByte1:getFlag(6) 
-            let Shamt = Imm && 0x1F  # Shift amount
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
             
-            if (ShiftType == 0) {  # SRLIW instruction
-                Result = toUnsigned(LowerRsValue >> Shamt)
-                
-            } else {  # SRAIW instruction
-                Result = LowerRsValue:int32ShiftRightArithmetic(Shamt)   
-            }       
-        }
-        
-        IntRegisters[Rd, vector2] = Result:signExt32to64()
-        
-        PC = PC:addInt32(4)  # Increments program counter 
-   
-
-    } elseif (Opcode == 0b0110111) {  # LUI instruction
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register        
-        let Imm = getUImmSExt64(InstrByte1, InstrByte2, InstrByte3)  # Upper immediate value
-  
-        IntRegisters[Rd, vector2] = Imm
-        
-        PC = PC:addInt32(4)  # Increments program counter
-        
-        
-    } elseif (Opcode == 0b0010111) {  # AUIPC instruction
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
-        let Imm = getUImmSExt64(InstrByte1, InstrByte2, InstrByte3)  # Upper immediate value
-
-        IntRegisters[Rd, vector2] = PC:addInt64(Imm) 
- 
-        PC = PC:addInt32(4)  # Increments program counter
-       
-        
-    } elseif (Opcode == 0b0110011) {  # OP instructions
-        let Funct = getFunct3(InstrByte3)
-        
-        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
-        let Rs1Value = IntRegisters[Rs1, vector2]
-
-        let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
-        let Rs2Value = IntRegisters[Rs2, vector2]
-        
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
-        
-        if (Funct == 0b000) {  # ADD & SUB instructions
-            let OpType = InstrByte1:getFlag(6)
-            
-            if (OpType == 0) {  # ADD instruction
-                IntRegisters[Rd, vector2] = Rs1Value:addInt64(Rs2Value)
-           
-            } else {  # SUB instruction
-                IntRegisters[Rd, vector2] = Rs1Value:subInt64(Rs2Value)
-            }
-            
-        } elseif (Funct == 0b010) {  # SLT instruction
-            IntRegisters[Rd, vector2] = vec2(0, Rs1Value:isLessThan(Rs2Value))
-              
-        } elseif (Funct == 0b011) {  # SLTU instruction
-            IntRegisters[Rd, vector2] = vec2(0, Rs1Value:isLessThanU(Rs2Value))
-              
-        } elseif (Funct == 0b111) {  # AND instruction
-            IntRegisters[Rd, vector2] = bAnd64(Rs1Value, Rs2Value)
-            
-        } elseif (Funct == 0b110) {  # OR instruction
-            IntRegisters[Rd, vector2] = bOr64(Rs1Value, Rs2Value)
-           
-        } elseif (Funct == 0b100) {  # XOR instruction
-            IntRegisters[Rd, vector2] = bXor64(Rs1Value, Rs2Value)
-           
-        } elseif (Funct == 0b001) {  # SLL instruction
-            let Shamt = Rs2Value:y() && 0x3F  # Shift amount
-            IntRegisters[Rd, vector2] = Rs1Value:int64ShiftLeftLogical(Shamt)
-
-        } elseif (Funct == 0b101) {  # SRL & SRA instructions
-            let ShiftType = InstrByte1:getFlag(6)
-            let Shamt = Rs2Value:y() && 0x3F  # Shift amount
-          
-            if (ShiftType == 0) {  # SRL instruction
-                IntRegisters[Rd, vector2] = Rs1Value:int64ShiftRightLogical(Shamt)
-                 
-            } else {  # SRA instruction
-                IntRegisters[Rd, vector2] = Rs1Value:int64ShiftRightArithmetic(Shamt)                    
-            } 
-        }
-        
-        PC = PC:addInt32(4)  # Increments program counter
-        
-        
-    } elseif (Opcode == 0b0111011) {  # OP-32 instructions
-        let Funct = getFunct3(InstrByte3)
-        
-        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
-        let LowerRs1Value = IntRegisters[Rs1, vector2]:y()
-
-        let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
-        let LowerRs2Value = IntRegisters[Rs2, vector2]:y()
-        
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
-        let Result = _INF
-        
-        if (Funct == 0b000) {  # ADDW & SUBW instructions
-            let OpType = InstrByte1:getFlag(6)
-            
-            if (OpType == 0) {  # ADDW instruction
-                Result = (LowerRs1Value + LowerRs2Value) % UINT32OVF
-           
-            } else {  # SUBW instruction
-                Result = (LowerRs1Value - LowerRs2Value) % UINT32OVF
-            } 
-                           
-        } elseif (Funct == 0b001) {  # SLLW instruction
-            let Shamt = LowerRs2Value && 0x1F  # Shift amount
-            Result = toUnsigned(LowerRs1Value << Shamt)
-            
-        } elseif (Funct == 0b101) {  # SRLW & SRAW instructions
-            let ShiftType = InstrByte1:getFlag(6) 
-            let Shamt = LowerRs2Value && 0x1F  # Shift amount
-            
-            if (ShiftType == 0) {  # SRLW instruction
-                Result = toUnsigned(LowerRs1Value >> Shamt)
-                
-            } else {  # SRAW instruction
-                Result = LowerRs1Value:int32ShiftRightArithmetic(Shamt)   
-            }                   
-        }
-        
-        IntRegisters[Rd, vector2] = Result:signExt32to64()  
-        
-        PC = PC:addInt32(4)  # Increments program counter
-                 
-                
-    } elseif (Opcode == 0b1101111) {  # JAL instruction
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register   
-        let Offset = getJImmSExt64(InstrByte1, InstrByte2, InstrByte3)  # Sign-extended jump offset
-        
-        IntRegisters[Rd, vector2] = PC:addInt32(4)  # Stores the address of the next instruction into Rd
-        PC = PC:addInt64(Offset)  # Jumps to the offset relative to PC
- 
-       
-    } elseif (Opcode == 0b1100111) {  # JALR instruction
-        let Rs = getRs1(InstrByte2, InstrByte3)  # Source register
-        let RsValue = IntRegisters[Rs, vector2]
-        
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register         
-        
-        let Offset = getIImm(InstrByte1, InstrByte2):signExt12to64()  # Sign-extended jump offset 
-        
-        let TargetAddress = RsValue:addInt64(Offset)
-        TargetAddress = TargetAddress:setY(TargetAddress:y() && 0xFFFFFFFE)  # Setting the least-significant bit to zero
-        
-        IntRegisters[Rd, vector2] = PC:addInt32(4)  # Stores the address of the next instruction into Rd
-        PC = TargetAddress  # Jumps to the target address
-        
-        
-    } elseif (Opcode == 0b1100011) {  # BRANCH instructions
-        let Funct = getFunct3(InstrByte3)
-        
-        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
-        let Rs1Value = IntRegisters[Rs1, vector2]
-
-        let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
-        let Rs2Value = IntRegisters[Rs2, vector2]        
-        
-        if (Funct == 0b000) {  # BEQ instruction
-            if (Rs1Value == Rs2Value) {
-                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)  # Sign-extended jump offset
-                PC = PC:addInt64(Offset)  # Branches to the offset relative to PC
-                
-            } else { PC = PC:addInt32(4) }  # Increments program counter otherwise
-            
-        } elseif (Funct == 0b001) {  # BNE instruction
-            if (Rs1Value != Rs2Value) {
-                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
-                PC = PC:addInt64(Offset)
-                
-            } else { PC = PC:addInt32(4) }  
-            
-        } elseif (Funct == 0b100) {  # BLT instruction
-            if (Rs1Value:isLessThan(Rs2Value)) {
-                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
-                PC = PC:addInt64(Offset)
-                
-            } else { PC = PC:addInt32(4) }  
-
-        } elseif (Funct == 0b110) {  # BLTU instruction
-            if (Rs1Value:isLessThanU(Rs2Value)) {
-                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
-                PC = PC:addInt64(Offset)
-                
-            } else { PC = PC:addInt32(4) } 
+            let Imm = getIImm(InstrByte1, InstrByte2)  # 12-bit immediate value
+            let SExtImm = Imm:signExt12to64()  # Sign-extended immediate value
              
-        } elseif (Funct == 0b101) {  # BGE instruction
-            if (Rs1Value:isGreaterOrEqual(Rs2Value)) {
-                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
-                PC = PC:addInt64(Offset)
+            if (Funct == 0b000) {  # ADDI instruction
+                IntRegisters[Rd, vector2] = RsValue:addInt64(SExtImm)
                 
-            } else { PC = PC:addInt32(4) }  
-
-        } elseif (Funct == 0b111) {  # BGEU instruction
-            if (Rs1Value:isGreaterOrEqualU(Rs2Value)) {
-                let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
-                PC = PC:addInt64(Offset)
+            } elseif (Funct == 0b010) {  # SLTI instruction
+                IntRegisters[Rd, vector2] = vec2(0, RsValue:isLessThan(SExtImm))
                 
-            } else { PC = PC:addInt32(4) }  
-        }
-        
-        
-    } elseif (Opcode == 0b0000011) {  # LOAD instructions
-        let Width = getFunct3(InstrByte3)  
+            } elseif (Funct == 0b011) {  # SLTIU instruction
+                IntRegisters[Rd, vector2] = vec2(0, RsValue:isLessThanU(SExtImm))
                 
-        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
-        let Base = IntRegisters[Rs1, vector2]  # Memory address base
-
-        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register 
-
-        let Offset = getIImm(InstrByte1, InstrByte2):signExt12to64()  # Memory address offset 
-
-        let Address = Base:addInt64(Offset)
-
-        if (Width == 0b011) {  # LD instruction
-            let Byte1 = Memory[Address:toString()            , number]  # Load bytes from memory
-            let Byte2 = Memory[Address:addInt32(1):toString(), number]
-            let Byte3 = Memory[Address:addInt32(2):toString(), number]  
-            let Byte4 = Memory[Address:addInt32(3):toString(), number]
-            let Byte5 = Memory[Address:addInt32(4):toString(), number]
-            let Byte6 = Memory[Address:addInt32(5):toString(), number]
-            let Byte7 = Memory[Address:addInt32(6):toString(), number]
-            let Byte8 = Memory[Address:addInt32(7):toString(), number] 
-
-            IntRegisters[Rd, vector2] = vec2(toUnsigned(Byte8 << 24) + (Byte7 << 16) + (Byte6 << 8) + Byte5, 
-                                             toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1)
-                                            
-        } elseif (Width == 0b010) {  # LW instruction
-            let Byte1 = Memory[Address:toString()            , number]
-            let Byte2 = Memory[Address:addInt32(1):toString(), number]
-            let Byte3 = Memory[Address:addInt32(2):toString(), number]
-            let Byte4 = Memory[Address:addInt32(3):toString(), number]
+            } elseif (Funct == 0b111) {  # ANDI instruction
+                IntRegisters[Rd, vector2] = bAnd64(RsValue, SExtImm)
+                
+            } elseif (Funct == 0b110) {  # ORI instruction
+                IntRegisters[Rd, vector2] = bOr64(RsValue, SExtImm)
+                
+            } elseif (Funct == 0b100) {  # XORI instruction
+                IntRegisters[Rd, vector2] = bXor64(RsValue, SExtImm)
+                
+            } elseif (Funct == 0b001) {  # SLLI instruction
+                let Shamt = SExtImm:y() && 0x3F  # Shift amount
+                IntRegisters[Rd, vector2] = RsValue:int64ShiftLeftLogical(Shamt)
+                
+            } elseif (Funct == 0b101) {  # SRLI & SRAI instructions
+                let ShiftType = InstrByte1:getFlag(6)
+                let Shamt = SExtImm:y() && 0x3F  # Shift amount
+    
+                if (ShiftType == 0) {  # SRLI instruction
+                    IntRegisters[Rd, vector2] = RsValue:int64ShiftRightLogical(Shamt)
+                    
+                } else {  # SRAI instruction
+                    IntRegisters[Rd, vector2] = RsValue:int64ShiftRightArithmetic(Shamt)
+                }
+            }
             
-            IntRegisters[Rd, vector2] = (toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1):signExt32to64()           
-   
-
-        } elseif (Width == 0b110) {  # LWU instruction
-            let Byte1 = Memory[Address:toString()            , number]
-            let Byte2 = Memory[Address:addInt32(1):toString(), number]
-            let Byte3 = Memory[Address:addInt32(2):toString(), number]
-            let Byte4 = Memory[Address:addInt32(3):toString(), number]
+            PC = PC:addInt32(4)  # Increments program counter
             
-            IntRegisters[Rd, vector2] = vec2(0, toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1)  
-                      
-        } elseif (Width == 0b001) {  # LH instruction
-            let Byte1 = Memory[Address:toString()            , number]
-            let Byte2 = Memory[Address:addInt32(1):toString(), number]
+                
+        } elseif (Opcode == 0b0011011) {  # OP-IMM-32 instructions
+            let Funct = getFunct3(InstrByte3)
+                  
+            let Rs = getRs1(InstrByte2, InstrByte3)  # Source register
+            let LowerRsValue = IntRegisters[Rs, vector2]:y()
             
-            IntRegisters[Rd, vector2] = ((Byte2 << 8) + Byte1):signExt16to64()           
-
-        } elseif (Width == 0b101) {  # LHU instruction
-            let Byte1 = Memory[Address:toString()            , number]
-            let Byte2 = Memory[Address:addInt32(1):toString(), number]
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
+            let Result = _INF
             
-            IntRegisters[Rd, vector2] = vec2(0, (Byte2 << 8) + Byte1)
-                      
-        } elseif (Width == 0b000) {  # LB instruction
-            let Byte1 = Memory[Address:toString()            , number]
+            let Imm = getIImm(InstrByte1, InstrByte2)  # Immediate value        
+           
+            if (Funct == 0b000) {  # ADDIW instruction
+                let SExtImm = Imm:signExt12to32()  # Sign-extended lower immediate value        
+                Result = (LowerRsValue + SExtImm) % UINT32OVF
+                         
+            } elseif (Funct == 0b001) {  # SLLIW instruction
+                let Shamt = Imm && 0x1F  # Shift amount
+                Result = toUnsigned(LowerRsValue << Shamt)
+                
+            } elseif (Funct == 0b101) {  # SRLIW & SRAIW instructions
+                let ShiftType = InstrByte1:getFlag(6) 
+                let Shamt = Imm && 0x1F  # Shift amount
+                
+                if (ShiftType == 0) {  # SRLIW instruction
+                    Result = toUnsigned(LowerRsValue >> Shamt)
+                    
+                } else {  # SRAIW instruction
+                    Result = LowerRsValue:int32ShiftRightArithmetic(Shamt)   
+                }       
+            }
             
-            IntRegisters[Rd, vector2] = (Byte1):signExt8to64()           
-
-        } elseif (Width == 0b100) {  # LBU instruction
-            let Byte1 = Memory[Address:toString()            , number]  # Load bytes from memory
+            IntRegisters[Rd, vector2] = Result:signExt32to64()
             
-            IntRegisters[Rd, vector2] = vec2(0, Byte1)          
-        }
-
-        PC = PC:addInt32(4)
-  
+            PC = PC:addInt32(4)  # Increments program counter 
+       
+    
+        } elseif (Opcode == 0b0110111) {  # LUI instruction
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register        
+            let Imm = getUImmSExt64(InstrByte1, InstrByte2, InstrByte3)  # Upper immediate value
       
-    } elseif (Opcode == 0b0100011) {  # STORE instructions
-        let Width = getFunct3(InstrByte3)  
-                
-        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
-        let Base = IntRegisters[Rs1, vector2]  # Memory address base        
-        
-        let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
-        let Rs2Value = IntRegisters[Rs2, vector2]
-        let LowerRs2Value = Rs2Value:y()        
-        
-        let Offset = getSImmSExt64(InstrByte1, InstrByte3, InstrByte4)  # Memory address offset         
-        
-        let Address = Base:addInt64(Offset)        
-
-        if (Width == 0b011) {  # SD instruction
-            let UpperRs2Value = Rs2Value:x()
+            IntRegisters[Rd, vector2] = Imm
             
-            Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF  # Store bytes to memory
-            Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF
-            Memory[Address:addInt32(2):toString(), number] = (LowerRs2Value >> 16) && 0xFF
-            Memory[Address:addInt32(3):toString(), number] = (LowerRs2Value >> 24) 
-            Memory[Address:addInt32(4):toString(), number] = (UpperRs2Value      ) && 0xFF
-            Memory[Address:addInt32(5):toString(), number] = (UpperRs2Value >>  8) && 0xFF
-            Memory[Address:addInt32(6):toString(), number] = (UpperRs2Value >> 16) && 0xFF
-            Memory[Address:addInt32(7):toString(), number] = (UpperRs2Value >> 24)
-                            
-        } elseif (Width == 0b010) {  # SW instruction
-            Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF
-            Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF
-            Memory[Address:addInt32(2):toString(), number] = (LowerRs2Value >> 16) && 0xFF
-            Memory[Address:addInt32(3):toString(), number] = (LowerRs2Value >> 24)             
-             
-        } elseif (Width == 0b001) {  # SH instruction
-            Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF
-            Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF           
-             
-        } elseif (Width == 0b000) {  # SB instruction
-            Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF                  
+            PC = PC:addInt32(4)  # Increments program counter
+            
+            
+        } elseif (Opcode == 0b0010111) {  # AUIPC instruction
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
+            let Imm = getUImmSExt64(InstrByte1, InstrByte2, InstrByte3)  # Upper immediate value
+    
+            IntRegisters[Rd, vector2] = PC:addInt64(Imm) 
+     
+            PC = PC:addInt32(4)  # Increments program counter
+           
+            
+        } elseif (Opcode == 0b0110011) {  # OP instructions
+            let Funct = getFunct3(InstrByte3)
+            
+            let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
+            let Rs1Value = IntRegisters[Rs1, vector2]
+    
+            let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
+            let Rs2Value = IntRegisters[Rs2, vector2]
+            
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
+            
+            if (Funct == 0b000) {  # ADD & SUB instructions
+                let OpType = InstrByte1:getFlag(6)
+                
+                if (OpType == 0) {  # ADD instruction
+                    IntRegisters[Rd, vector2] = Rs1Value:addInt64(Rs2Value)
+               
+                } else {  # SUB instruction
+                    IntRegisters[Rd, vector2] = Rs1Value:subInt64(Rs2Value)
+                }
+                
+            } elseif (Funct == 0b010) {  # SLT instruction
+                IntRegisters[Rd, vector2] = vec2(0, Rs1Value:isLessThan(Rs2Value))
+                  
+            } elseif (Funct == 0b011) {  # SLTU instruction
+                IntRegisters[Rd, vector2] = vec2(0, Rs1Value:isLessThanU(Rs2Value))
+                  
+            } elseif (Funct == 0b111) {  # AND instruction
+                IntRegisters[Rd, vector2] = bAnd64(Rs1Value, Rs2Value)
+                
+            } elseif (Funct == 0b110) {  # OR instruction
+                IntRegisters[Rd, vector2] = bOr64(Rs1Value, Rs2Value)
+               
+            } elseif (Funct == 0b100) {  # XOR instruction
+                IntRegisters[Rd, vector2] = bXor64(Rs1Value, Rs2Value)
+               
+            } elseif (Funct == 0b001) {  # SLL instruction
+                let Shamt = Rs2Value:y() && 0x3F  # Shift amount
+                IntRegisters[Rd, vector2] = Rs1Value:int64ShiftLeftLogical(Shamt)
+    
+            } elseif (Funct == 0b101) {  # SRL & SRA instructions
+                let ShiftType = InstrByte1:getFlag(6)
+                let Shamt = Rs2Value:y() && 0x3F  # Shift amount
+              
+                if (ShiftType == 0) {  # SRL instruction
+                    IntRegisters[Rd, vector2] = Rs1Value:int64ShiftRightLogical(Shamt)
+                     
+                } else {  # SRA instruction
+                    IntRegisters[Rd, vector2] = Rs1Value:int64ShiftRightArithmetic(Shamt)                    
+                } 
+            }
+            
+            PC = PC:addInt32(4)  # Increments program counter
+            
+            
+        } elseif (Opcode == 0b0111011) {  # OP-32 instructions
+            let Funct = getFunct3(InstrByte3)
+            
+            let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
+            let LowerRs1Value = IntRegisters[Rs1, vector2]:y()
+    
+            let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
+            let LowerRs2Value = IntRegisters[Rs2, vector2]:y()
+            
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register
+            let Result = _INF
+            
+            if (Funct == 0b000) {  # ADDW & SUBW instructions
+                let OpType = InstrByte1:getFlag(6)
+                
+                if (OpType == 0) {  # ADDW instruction
+                    Result = (LowerRs1Value + LowerRs2Value) % UINT32OVF
+               
+                } else {  # SUBW instruction
+                    Result = (LowerRs1Value - LowerRs2Value) % UINT32OVF
+                } 
+                               
+            } elseif (Funct == 0b001) {  # SLLW instruction
+                let Shamt = LowerRs2Value && 0x1F  # Shift amount
+                Result = toUnsigned(LowerRs1Value << Shamt)
+                
+            } elseif (Funct == 0b101) {  # SRLW & SRAW instructions
+                let ShiftType = InstrByte1:getFlag(6) 
+                let Shamt = LowerRs2Value && 0x1F  # Shift amount
+                
+                if (ShiftType == 0) {  # SRLW instruction
+                    Result = toUnsigned(LowerRs1Value >> Shamt)
+                    
+                } else {  # SRAW instruction
+                    Result = LowerRs1Value:int32ShiftRightArithmetic(Shamt)   
+                }                   
+            }
+            
+            IntRegisters[Rd, vector2] = Result:signExt32to64()  
+            
+            PC = PC:addInt32(4)  # Increments program counter
+                     
+                    
+        } elseif (Opcode == 0b1101111) {  # JAL instruction
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register   
+            let Offset = getJImmSExt64(InstrByte1, InstrByte2, InstrByte3)  # Sign-extended jump offset
+            
+            IntRegisters[Rd, vector2] = PC:addInt32(4)  # Stores the address of the next instruction into Rd
+            PC = PC:addInt64(Offset)  # Jumps to the offset relative to PC
+     
+           
+        } elseif (Opcode == 0b1100111) {  # JALR instruction
+            let Rs = getRs1(InstrByte2, InstrByte3)  # Source register
+            let RsValue = IntRegisters[Rs, vector2]
+            
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register         
+            
+            let Offset = getIImm(InstrByte1, InstrByte2):signExt12to64()  # Sign-extended jump offset 
+            
+            let TargetAddress = RsValue:addInt64(Offset)
+            TargetAddress = TargetAddress:setY(TargetAddress:y() && 0xFFFFFFFE)  # Setting the least-significant bit to zero
+            
+            IntRegisters[Rd, vector2] = PC:addInt32(4)  # Stores the address of the next instruction into Rd
+            PC = TargetAddress  # Jumps to the target address
+            
+            
+        } elseif (Opcode == 0b1100011) {  # BRANCH instructions
+            let Funct = getFunct3(InstrByte3)
+            
+            let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
+            let Rs1Value = IntRegisters[Rs1, vector2]
+    
+            let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
+            let Rs2Value = IntRegisters[Rs2, vector2]        
+            
+            if (Funct == 0b000) {  # BEQ instruction
+                if (Rs1Value == Rs2Value) {
+                    let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)  # Sign-extended jump offset
+                    PC = PC:addInt64(Offset)  # Branches to the offset relative to PC
+                    
+                } else { PC = PC:addInt32(4) }  # Increments program counter otherwise
+                
+            } elseif (Funct == 0b001) {  # BNE instruction
+                if (Rs1Value != Rs2Value) {
+                    let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                    PC = PC:addInt64(Offset)
+                    
+                } else { PC = PC:addInt32(4) }  
+                
+            } elseif (Funct == 0b100) {  # BLT instruction
+                if (Rs1Value:isLessThan(Rs2Value)) {
+                    let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                    PC = PC:addInt64(Offset)
+                    
+                } else { PC = PC:addInt32(4) }  
+    
+            } elseif (Funct == 0b110) {  # BLTU instruction
+                if (Rs1Value:isLessThanU(Rs2Value)) {
+                    let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                    PC = PC:addInt64(Offset)
+                    
+                } else { PC = PC:addInt32(4) } 
+                 
+            } elseif (Funct == 0b101) {  # BGE instruction
+                if (Rs1Value:isGreaterOrEqual(Rs2Value)) {
+                    let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                    PC = PC:addInt64(Offset)
+                    
+                } else { PC = PC:addInt32(4) }  
+    
+            } elseif (Funct == 0b111) {  # BGEU instruction
+                if (Rs1Value:isGreaterOrEqualU(Rs2Value)) {
+                    let Offset = getBImmSExt64(InstrByte1, InstrByte3, InstrByte4)
+                    PC = PC:addInt64(Offset)
+                    
+                } else { PC = PC:addInt32(4) }  
+            }
+            
+            
+        } elseif (Opcode == 0b0000011) {  # LOAD instructions
+            let Width = getFunct3(InstrByte3)  
+                    
+            let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
+            let Base = IntRegisters[Rs1, vector2]  # Memory address base
+    
+            let Rd = getRd(InstrByte3, InstrByte4)  # Destination register 
+    
+            let Offset = getIImm(InstrByte1, InstrByte2):signExt12to64()  # Memory address offset 
+    
+            let Address = Base:addInt64(Offset)
+    
+            if (Width == 0b011) {  # LD instruction
+                let Byte1 = Memory[Address:toString()            , number]  # Load bytes from memory
+                let Byte2 = Memory[Address:addInt32(1):toString(), number]
+                let Byte3 = Memory[Address:addInt32(2):toString(), number]  
+                let Byte4 = Memory[Address:addInt32(3):toString(), number]
+                let Byte5 = Memory[Address:addInt32(4):toString(), number]
+                let Byte6 = Memory[Address:addInt32(5):toString(), number]
+                let Byte7 = Memory[Address:addInt32(6):toString(), number]
+                let Byte8 = Memory[Address:addInt32(7):toString(), number] 
+    
+                IntRegisters[Rd, vector2] = vec2(toUnsigned(Byte8 << 24) + (Byte7 << 16) + (Byte6 << 8) + Byte5, 
+                                                 toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1)
+                                                
+            } elseif (Width == 0b010) {  # LW instruction
+                let Byte1 = Memory[Address:toString()            , number]
+                let Byte2 = Memory[Address:addInt32(1):toString(), number]
+                let Byte3 = Memory[Address:addInt32(2):toString(), number]
+                let Byte4 = Memory[Address:addInt32(3):toString(), number]
+                
+                IntRegisters[Rd, vector2] = (toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1):signExt32to64()           
+       
+    
+            } elseif (Width == 0b110) {  # LWU instruction
+                let Byte1 = Memory[Address:toString()            , number]
+                let Byte2 = Memory[Address:addInt32(1):toString(), number]
+                let Byte3 = Memory[Address:addInt32(2):toString(), number]
+                let Byte4 = Memory[Address:addInt32(3):toString(), number]
+                
+                IntRegisters[Rd, vector2] = vec2(0, toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1)  
+                          
+            } elseif (Width == 0b001) {  # LH instruction
+                let Byte1 = Memory[Address:toString()            , number]
+                let Byte2 = Memory[Address:addInt32(1):toString(), number]
+                
+                IntRegisters[Rd, vector2] = ((Byte2 << 8) + Byte1):signExt16to64()           
+    
+            } elseif (Width == 0b101) {  # LHU instruction
+                let Byte1 = Memory[Address:toString()            , number]
+                let Byte2 = Memory[Address:addInt32(1):toString(), number]
+                
+                IntRegisters[Rd, vector2] = vec2(0, (Byte2 << 8) + Byte1)
+                          
+            } elseif (Width == 0b000) {  # LB instruction
+                let Byte1 = Memory[Address:toString()            , number]
+                
+                IntRegisters[Rd, vector2] = (Byte1):signExt8to64()           
+    
+            } elseif (Width == 0b100) {  # LBU instruction
+                let Byte1 = Memory[Address:toString()            , number]  # Load bytes from memory
+                
+                IntRegisters[Rd, vector2] = vec2(0, Byte1)          
+            }
+    
+            PC = PC:addInt32(4)
+      
+          
+        } elseif (Opcode == 0b0100011) {  # STORE instructions
+            let Width = getFunct3(InstrByte3)  
+                    
+            let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
+            let Base = IntRegisters[Rs1, vector2]  # Memory address base        
+            
+            let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
+            let Rs2Value = IntRegisters[Rs2, vector2]
+            let LowerRs2Value = Rs2Value:y()        
+            
+            let Offset = getSImmSExt64(InstrByte1, InstrByte3, InstrByte4)  # Memory address offset         
+            
+            let Address = Base:addInt64(Offset)        
+    
+            if (Width == 0b011) {  # SD instruction
+                let UpperRs2Value = Rs2Value:x()
+                
+                Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF  # Store bytes to memory
+                Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF
+                Memory[Address:addInt32(2):toString(), number] = (LowerRs2Value >> 16) && 0xFF
+                Memory[Address:addInt32(3):toString(), number] = (LowerRs2Value >> 24) 
+                Memory[Address:addInt32(4):toString(), number] = (UpperRs2Value      ) && 0xFF
+                Memory[Address:addInt32(5):toString(), number] = (UpperRs2Value >>  8) && 0xFF
+                Memory[Address:addInt32(6):toString(), number] = (UpperRs2Value >> 16) && 0xFF
+                Memory[Address:addInt32(7):toString(), number] = (UpperRs2Value >> 24)
+                                
+            } elseif (Width == 0b010) {  # SW instruction
+                Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF
+                Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF
+                Memory[Address:addInt32(2):toString(), number] = (LowerRs2Value >> 16) && 0xFF
+                Memory[Address:addInt32(3):toString(), number] = (LowerRs2Value >> 24)             
+                 
+            } elseif (Width == 0b001) {  # SH instruction
+                Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF
+                Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF           
+                 
+            } elseif (Width == 0b000) {  # SB instruction
+                Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF                  
+            }
+    
+            PC = PC:addInt32(4)
+            
+            
+        } elseif (Opcode == 0b0001111) {  #FENCE instruction (currently implemented as NOP)
+            hint("FENCE instruction encountered", 10)
+            PC = PC:addInt32(4)
+        
+        
+        } elseif (Opcode == 0b1110011) {  #SYSTEM instructions (currently prints out return value registers)
+            hint("SYSTEM instruction encountered", 10)
+            PC = PC:addInt32(4)
+            
+            print("a0 return value register: ", int64toLuaFloat(IntRegisters[10, vector2]))
+            print("a1 return value register: ", int64toLuaFloat(IntRegisters[11, vector2]))
+        
+        } else {  # Illegal instruction handling
+            assert(0, format("Unsupported or illegal instruction, opcode: %X", Opcode))
+            
         }
-
-        PC = PC:addInt32(4)
         
-        
-    } elseif (Opcode == 0b0001111) {  #FENCE instruction (currently implemented as NOP)
-        hint("FENCE instruction encountered", 7)
-        PC = PC:addInt32(4)
-    
-    
-    } elseif (Opcode == 0b1110011) {  #SYSTEM instructions (currently implemented as NOP)
-        hint("SYSTEM instruction encountered", 7)
-        PC = PC:addInt32(4)
-    
-    
-    } else {  # Illegal instruction handling
-        assert(0, format("Unsupported or illegal instruction, opcode: %X", Opcode))
-        
+        IntRegisters[0, vector2] = vec2()
     }
-    
-    IntRegisters[0, vector2] = vec2()
 }
