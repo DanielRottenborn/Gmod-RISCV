@@ -683,8 +683,8 @@ if (first() | dupefinished()) {
         PC = PC:addInt32(4)
     
     
-    } else {  # Invalid instruction handling
-        assert(0, format("Unsupported or invalid instruction, opcode: %X", Opcode))
+    } else {  # Illegal instruction handling
+        assert(0, format("Unsupported or illegal instruction, opcode: %X", Opcode))
         
     }
     
