@@ -6,7 +6,7 @@
 @persist [PC]:vector2
 @strict
 
-interval(1000)
+interval(10)
 
 const UINT32OVF = 2 ^ 32  # MaxUInt32 + 1
 
@@ -30,6 +30,11 @@ function vector2 number:signExt21to64() {  # Sign-extends 21-bit value to 64 bit
     return vec2(0xFFFFFFFF, 0xFFE00000) * Sign + vec2(0, This)   
 }
 
+function vector2 number:signExt16to64() {  # Sign-extends 16-bit value to 64 bits
+    let Sign = This >> 15
+    return vec2(0xFFFFFFFF, 0xFFFF0000) * Sign + vec2(0, This)   
+}
+
 function vector2 number:signExt13to64() {  # Sign-extends 13-bit value to 64 bits
     let Sign = This >> 12
     return vec2(0xFFFFFFFF, 0xFFFFE000) * Sign + vec2(0, This)   
@@ -38,6 +43,11 @@ function vector2 number:signExt13to64() {  # Sign-extends 13-bit value to 64 bit
 function vector2 number:signExt12to64() {  # Sign-extends 12-bit value to 64 bits
     let Sign = This >> 11
     return vec2(0xFFFFFFFF, 0xFFFFF000) * Sign + vec2(0, This)   
+}
+
+function vector2 number:signExt8to64() {  # Sign-extends 8-bit value to 64 bits
+    let Sign = This >> 7
+    return vec2(0xFFFFFFFF, 0xFFFFFF00) * Sign + vec2(0, This)   
 }
 
 function number number:signExt12to32() {  # Sign-extends 12-bit value to 32 bits
@@ -69,6 +79,11 @@ function number getRd(InstrByte3:number, InstrByte4:number) {  # Returns destina
 
 function number getIImm(InstrByte1:number, InstrByte2:number) {  # Returns I-type immediate value
     return (InstrByte1 << 4) + (InstrByte2 >> 4)
+}
+
+function vector2 getSImmSExt64(InstrByte1:number, InstrByte3:number, InstrByte4:number) {  # Returns S-type sign-extended immediate value
+    let SImm = ((InstrByte1 && 0xFE) << 4) + ((InstrByte3 && 0xF) << 1) + (InstrByte4 >> 7)   
+    return SImm:signExt12to64()
 }
 
 function vector2 getBImmSExt64(InstrByte1:number, InstrByte3:number, InstrByte4:number) {  # Returns B-type sign-extended immediate value
@@ -212,34 +227,43 @@ function number number:int32ShiftRightArithmetic(ShiftAmount:number) {  # Max sh
     } else { return toUnsigned(This >> ShiftAmount) }
 }
 
+#------------------------------------------------------------
+#---------------------- Initialisation ----------------------
+#------------------------------------------------------------
 
 if (first() | dupefinished()) {
     # 64-bit registers are stored in vector2 form, x component contains upper 32 bits, y component contains lower 32 bits
     
-    IntRegisters = array(  # 32 (x0-x31) 64-bit integer registers
-        1 = vec2(0x0, 0x0),
-        2 = vec2(0x0, 0x0)
-    )
+    PC = vec2()  # Program counter register         
+    IntRegisters = array()  # 32 (x0-x31) 64-bit integer registers   
+    Memory = table()  # 64-bit memory addressable in "[upper_UInt32,lower_UInt32]" format
     
-    PC = vec2()  # Program counter register
-      
-    Memory = table()  # 64-bit memory addressable in "[upper_uint32,lower_uint32]" format
- 
-
-    let Instructions = array(0x00108093)
+    Initialized = 1
     
-    # For testing purposes:
+    #---------- For testing purposes ----------
+    let ByteCode = ""
+    
+    let Instructions = array()    
+    
+    ByteCode = ByteCode:replaceRE("[ \t\n]", "")
+    
+    for (I = 0, floor(ByteCode:length() / 8) - 1) {
+        let Instruction = ByteCode:sub(I * 8 + 1, I * 8 + 8):toNumber(16)        
+        Instructions:pushNumber(Instruction) 
+    }
+    
     foreach(I:number, Instruction:number = Instructions) {
-        Memory[toString(vec2(0, ((I - 1) * 4)    )), number] =  Instruction && 0xFF
-        Memory[toString(vec2(0, ((I - 1) * 4) + 1)), number] = (Instruction >> 8) && 0xFF
+        Memory[toString(vec2(0, ((I - 1) * 4)    )), number] = (Instruction      ) && 0xFF
+        Memory[toString(vec2(0, ((I - 1) * 4) + 1)), number] = (Instruction >>  8) && 0xFF
         Memory[toString(vec2(0, ((I - 1) * 4) + 2)), number] = (Instruction >> 16) && 0xFF
         Memory[toString(vec2(0, ((I - 1) * 4) + 3)), number] = (Instruction >> 24)
     }
 
+#------------------------------------------------------------
+#------------------------------------------------------------
+#------------------------------------------------------------
 
-    Initialized = 1
-    
-    
+
 } elseif (Initialized) {
     let InstrByte1 = _INF
     let InstrByte2 = _INF
@@ -536,5 +560,133 @@ if (first() | dupefinished()) {
                 
             } else { PC = PC:addInt32(4) }  
         }
+        
+        
+    } elseif (Opcode == 0b0000011) {  # LOAD instructions
+        let Width = getFunct3(InstrByte3)  
+                
+        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
+        let Base = IntRegisters[Rs1, vector2]  # Memory address base
+
+        let Rd = getRd(InstrByte3, InstrByte4)  # Destination register 
+
+        let Offset = getIImm(InstrByte1, InstrByte2):signExt12to64()  # Memory address offset 
+
+        let Address = Base:addInt64(Offset)
+
+        if (Width == 0b011) {  # LD instruction
+            let Byte1 = Memory[Address:toString()            , number]  # Load bytes from memory
+            let Byte2 = Memory[Address:addInt32(1):toString(), number]
+            let Byte3 = Memory[Address:addInt32(2):toString(), number]  
+            let Byte4 = Memory[Address:addInt32(3):toString(), number]
+            let Byte5 = Memory[Address:addInt32(4):toString(), number]
+            let Byte6 = Memory[Address:addInt32(5):toString(), number]
+            let Byte7 = Memory[Address:addInt32(6):toString(), number]
+            let Byte8 = Memory[Address:addInt32(7):toString(), number] 
+
+            IntRegisters[Rd, vector2] = vec2(toUnsigned(Byte8 << 24) + (Byte7 << 16) + (Byte6 << 8) + Byte5, 
+                                             toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1)
+                                            
+        } elseif (Width == 0b010) {  # LW instruction
+            let Byte1 = Memory[Address:toString()            , number]
+            let Byte2 = Memory[Address:addInt32(1):toString(), number]
+            let Byte3 = Memory[Address:addInt32(2):toString(), number]
+            let Byte4 = Memory[Address:addInt32(3):toString(), number]
+            
+            IntRegisters[Rd, vector2] = (toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1):signExt32to64()           
+   
+
+        } elseif (Width == 0b110) {  # LWU instruction
+            let Byte1 = Memory[Address:toString()            , number]
+            let Byte2 = Memory[Address:addInt32(1):toString(), number]
+            let Byte3 = Memory[Address:addInt32(2):toString(), number]
+            let Byte4 = Memory[Address:addInt32(3):toString(), number]
+            
+            IntRegisters[Rd, vector2] = vec2(0, toUnsigned(Byte4 << 24) + (Byte3 << 16) + (Byte2 << 8) + Byte1)  
+                      
+        } elseif (Width == 0b001) {  # LH instruction
+            let Byte1 = Memory[Address:toString()            , number]
+            let Byte2 = Memory[Address:addInt32(1):toString(), number]
+            
+            IntRegisters[Rd, vector2] = ((Byte2 << 8) + Byte1):signExt16to64()           
+
+        } elseif (Width == 0b101) {  # LHU instruction
+            let Byte1 = Memory[Address:toString()            , number]
+            let Byte2 = Memory[Address:addInt32(1):toString(), number]
+            
+            IntRegisters[Rd, vector2] = vec2(0, (Byte2 << 8) + Byte1)
+                      
+        } elseif (Width == 0b000) {  # LB instruction
+            let Byte1 = Memory[Address:toString()            , number]
+            
+            IntRegisters[Rd, vector2] = (Byte1):signExt8to64()           
+
+        } elseif (Width == 0b100) {  # LBU instruction
+            let Byte1 = Memory[Address:toString()            , number]  # Load bytes from memory
+            
+            IntRegisters[Rd, vector2] = vec2(0, Byte1)          
+        }
+
+        PC = PC:addInt32(4)
+  
+      
+    } elseif (Opcode == 0b0100011) {  # STORE instructions
+        let Width = getFunct3(InstrByte3)  
+                
+        let Rs1 = getRs1(InstrByte2, InstrByte3)  # First source register
+        let Base = IntRegisters[Rs1, vector2]  # Memory address base        
+        
+        let Rs2 = getRs2(InstrByte1, InstrByte2)  # Second source register
+        let Rs2Value = IntRegisters[Rs2, vector2]
+        let LowerRs2Value = Rs2Value:y()        
+        
+        let Offset = getSImmSExt64(InstrByte1, InstrByte3, InstrByte4)  # Memory address offset         
+        
+        let Address = Base:addInt64(Offset)        
+
+        if (Width == 0b011) {  # SD instruction
+            let UpperRs2Value = Rs2Value:x()
+            
+            Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF  # Store bytes to memory
+            Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF
+            Memory[Address:addInt32(2):toString(), number] = (LowerRs2Value >> 16) && 0xFF
+            Memory[Address:addInt32(3):toString(), number] = (LowerRs2Value >> 24) 
+            Memory[Address:addInt32(4):toString(), number] = (UpperRs2Value      ) && 0xFF
+            Memory[Address:addInt32(5):toString(), number] = (UpperRs2Value >>  8) && 0xFF
+            Memory[Address:addInt32(6):toString(), number] = (UpperRs2Value >> 16) && 0xFF
+            Memory[Address:addInt32(7):toString(), number] = (UpperRs2Value >> 24)
+                            
+        } elseif (Width == 0b010) {  # SW instruction
+            Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF
+            Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF
+            Memory[Address:addInt32(2):toString(), number] = (LowerRs2Value >> 16) && 0xFF
+            Memory[Address:addInt32(3):toString(), number] = (LowerRs2Value >> 24)             
+             
+        } elseif (Width == 0b001) {  # SH instruction
+            Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF
+            Memory[Address:addInt32(1):toString(), number] = (LowerRs2Value >>  8) && 0xFF           
+             
+        } elseif (Width == 0b000) {  # SB instruction
+            Memory[Address:toString()            , number] = (LowerRs2Value      ) && 0xFF                  
+        }
+
+        PC = PC:addInt32(4)
+        
+        
+    } elseif (Opcode == 0b0001111) {  #FENCE instruction (currently implemented as NOP)
+        hint("FENCE instruction encountered", 7)
+        PC = PC:addInt32(4)
+    
+    
+    } elseif (Opcode == 0b1110011) {  #SYSTEM instructions (currently implemented as NOP)
+        hint("SYSTEM instruction encountered", 7)
+        PC = PC:addInt32(4)
+    
+    
+    } else {  # Invalid instruction handling
+        assert(0, format("Unsupported or invalid instruction, opcode: %X", Opcode))
+        
     }
+    
+    IntRegisters[0, vector2] = vec2()
 }
