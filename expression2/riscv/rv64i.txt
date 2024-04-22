@@ -245,7 +245,18 @@ if (first() | dupefinished()) {
     Initialized = 1
     
     #---------- For testing purposes ----------
-    let ByteCode = ""
+    
+    let ByteCode = "0000001360000113060000ef0000001300050493000000130000001300000097000080e700000013
+                    00000013fe01011300812e2302010413fea42623feb42423fe84278300279793fec4270300f707b3
+                    0007a7830007851301c12403020101130000007300008067fc01011302112e2302812c2304010413
+                    188007930007a8830047a8030087a50300c7a5830107a6030147a6830187a70301c7a783fd142423
+                    fd042623fca42823fcb42a23fcc42c23fcd42e23fee42023fef42223fc8407930080059300078513
+                    050000effe0426230240006ffc840793fec4258300078513f4dff0effea42423fec4278300178793
+                    fef42623fec4270300700793fce7dce3000007930007851303c12083038124030401011300008067
+                    00000713fff5859302b75e63000507930000069340e588b30200006f0047a8030007a60300c85663
+                    0107a02300c7a2230016869300478793ff16c2e300170713fc9ff06f000080670000001300000013
+                    000000130000001300000097000080e7000000130000001300000013000000130000002d00000006
+                    0000005300000004000000030000005b000000460000000f"
     
     let Instructions = array()
     
@@ -269,7 +280,7 @@ if (first() | dupefinished()) {
 
 
 } elseif (Initialized) {
-    while (perf(90)) {
+    while (perf(90) & playerCanPrint()) {
     
         let InstrByte1 = _INF
         let InstrByte2 = _INF
@@ -684,12 +695,11 @@ if (first() | dupefinished()) {
             PC = PC:addInt32(4)
         
         
-        } elseif (Opcode == 0b1110011) {  #SYSTEM instructions (currently prints out return value registers)
+        } elseif (Opcode == 0b1110011) {  #SYSTEM instructions (currently prints out a0 (return value) register)
             hint("SYSTEM instruction encountered", 10)
             PC = PC:addInt32(4)
             
             print("a0 return value register: ", int64toLuaFloat(IntRegisters[10, vector2]))
-            print("a1 return value register: ", int64toLuaFloat(IntRegisters[11, vector2]))
         
         } else {  # Illegal instruction handling
             assert(0, format("Unsupported or illegal instruction, opcode: %X", Opcode))
