@@ -1,8 +1,8 @@
 # Gmod RISC-V Emulator
 ## Description
-The purpose of this project is to fully emulate RV64GC unpivileged ISA and supervisor priviliged ISA. Currently, the emulator can execute RV64I instructions in unprivileged mode, operating with little-endian memory.
+The purpose of this project is to fully emulate RV64GC unpivileged ISA and supervisor priviliged ISA. Currently, the emulator can execute RV64I instructions in unprivileged mode. Memory accesses are little-endian.
 `ECALL` and `EBREAK` instructions are used to output return value registers for now. 
-Written in an ingame derivative of Lua called 'E2'.
+Written in an ingame dialect of Lua called 'E2'.
 ## Examples
 ### Fibonacci Numbers
 Below is a simple assembly program that outputs Fibonacci numbers indefinitely. First, we assemble it into RISC-V object code.
