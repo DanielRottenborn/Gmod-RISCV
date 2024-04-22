@@ -1,4 +1,4 @@
-@name RiscV-64I
+@name RISC-V RV64I
 @model models/bull/gates/processor.mdl
 @persist [IntRegisters]:array
 @persist [Initialized]:number
@@ -247,13 +247,13 @@ if (first() | dupefinished()) {
     #---------- For testing purposes ----------
     let ByteCode = ""
     
-    let Instructions = array()    
+    let Instructions = array()
     
     ByteCode = ByteCode:replaceRE("[ \t\n]", "")
     
     for (I = 0, floor(ByteCode:length() / 8) - 1) {
-        let Instruction = ByteCode:sub(I * 8 + 1, I * 8 + 8):toNumber(16)        
-        Instructions:pushNumber(Instruction) 
+        let Instruction = ByteCode:sub(I * 8 + 1, I * 8 + 8):toNumber(16)
+        Instructions:pushNumber(Instruction)
     }
     
     foreach(I:number, Instruction:number = Instructions) {
