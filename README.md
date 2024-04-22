@@ -45,7 +45,7 @@ int main(void) {
   sort(n, 8);
 
   for (int i = 0; i < 8; i++) {
-    int b = print_element(n, i);
+    print_element(n, i);
   }
 
   return 0;
